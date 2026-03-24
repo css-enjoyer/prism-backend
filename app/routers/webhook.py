@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Request
-import json
 
 router = APIRouter()
 # Run server with: uv run uvicorn app.main:app --reload
 # Then run ngrok with: ngrok http 8000
+# Use ngrok dashboard at: localhost:4040
 
 
 @router.post("/webhook")
