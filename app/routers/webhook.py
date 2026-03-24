@@ -2,20 +2,19 @@ from fastapi import APIRouter, Request
 import json
 
 router = APIRouter()
+# Run server with: uv run uvicorn app.main:app --reload
+# Then run ngrok with: ngrok http 8000
 
 
 @router.post("/webhook")
 async def handle_webhook(request: Request):
-    headers = request.headers
+    event_type = request.headers.get("X-GitHub-Event")
+    if event_type != "pull_request":
+        return {"status": "ignored", "reason": f"Unsupported event type: {event_type}"}
 
-    raw_body = await request.body()
-    content_type = headers.get("content-type", "")
-
-    parsed_json = None
-    if "application/json" in content_type and raw_body:
-        try:
-            parsed_json = json.loads(raw_body)
-        except json.JSONDecodeError:
-            parsed_json = None
-
-    return {"url": str(request.url), "parsed_json": parsed_json}
+    body = await request.json()
+    delivery_id = request.headers.get("X-GitHub-Delivery")
+    repo = body["repository"]["full_name"]
+    pr_number = body["pull_request"]["number"]
+    print(f"Delivery: {delivery_id} | Repo: {repo} | PR: {pr_number}")
+    return {"status": "received"}
