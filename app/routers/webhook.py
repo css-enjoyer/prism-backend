@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 import hmac
 from hashlib import sha256
+
+from app.dependencies import verify_api_key
 from ..config import settings
 
 router = APIRouter()
@@ -9,27 +11,27 @@ router = APIRouter()
 # Use ngrok dashboard at: localhost:4040 -> Update github url on every start
 
 
-@router.post("/webhook")
+@router.post("/webhook", dependencies=[Depends(verify_api_key)])
 async def handle_webhook(request: Request):
     # Check if pull request
     event_type = request.headers.get("X-GitHub-Event")
     if event_type != "pull_request":
         return {"status": "ignored", "reason": f"Unsupported event type: {event_type}"}
 
-    # Validate signature
+    # Verify signature
     signature = request.headers.get("X-Hub-Signature-256")
     if not signature:
         raise HTTPException(status_code=401, detail="Missing signature header")
     if not signature.startswith("sha256="):
         raise HTTPException(status_code=403, detail="Invalid signature format")
-    if not hmac.compare_digest(
-        signature.split("=", 1)[1],
-        hmac.new(
-            key=settings.webhook_secret.encode(),
-            msg=await request.body(),
-            digestmod=sha256,
-        ).hexdigest(),
-    ):
+    body_bytes = await request.body()
+    expected = hmac.new(
+        key=settings.webhook_secret.encode(),
+        msg=body_bytes,
+        digestmod=sha256,
+    ).hexdigest()
+    received = signature.split("=", 1)[1]
+    if not hmac.compare_digest(expected, received):
         raise HTTPException(status_code=403, detail="Invalid signature")
 
     body = await request.json()

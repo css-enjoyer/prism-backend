@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     app_name: str = "Prism API"
     database_url: str
     webhook_secret: str
+    api_key: str
 
 
 settings = Settings()
