@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 import hmac
 from hashlib import sha256
 
-from app.dependencies import verify_api_key
 from ..config import settings
+from ..services.analysis import run_analysis
 
 router = APIRouter()
 # Run server with: uv run uvicorn app.main:app --reload
@@ -11,8 +11,8 @@ router = APIRouter()
 # Use ngrok dashboard at: localhost:4040 -> Update github url on every start
 
 
-@router.post("/webhook", dependencies=[Depends(verify_api_key)])
-async def handle_webhook(request: Request):
+@router.post("/webhook")
+async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     # Check if pull request
     event_type = request.headers.get("X-GitHub-Event")
     if event_type != "pull_request":
@@ -43,11 +43,20 @@ async def handle_webhook(request: Request):
             "reason": f"Unsupported action: {body.get('action')}",
         }
 
-    delivery_id = request.headers.get("X-GitHub-Delivery")
-    diff_payload = body["pull_request"]["diff_url"]
-    repo = body["repository"]["full_name"]
+    repo_full_name = body["repository"]["full_name"]
     pr_number = body["pull_request"]["number"]
-    print(
-        f"Delivery: {delivery_id} | Repo: {repo} | PR: {pr_number} | Diff: {diff_payload}"
+    gh_delivery_id = request.headers.get("X-GitHub-Delivery")
+    print(f"Delivery: {gh_delivery_id} | Repo: {repo_full_name} | PR: {pr_number}")
+
+    # Github needs a request within 10 seconds, so we will process the diff in the background and return immediately
+    background_tasks.add_task(
+        run_analysis,
+        repo_full_name,
+        pr_number,
+        gh_delivery_id,
     )
-    return {"status": "received"}
+
+    return {
+        "status": "received",
+        "message": "Pull request event received and will be processed in the background.",
+    }
