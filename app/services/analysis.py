@@ -48,19 +48,21 @@ async def review_diff(diff: str) -> dict:
     return json.loads(result)
 
 
-async def run_analysis(
-    diff_url: str, repo_full_name: str, pr_number: int, gh_delivery_id: str
-):
+async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str):
+    api_url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}"
+
     # Fetch diff from url using httpx
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            diff_url,
+            api_url,
             headers={
                 "Authorization": f"Bearer {settings.github_token}",
                 "Accept": "application/vnd.github.v3.diff",
             },
         )
         diff = response.text
+        print(f"URL: {api_url}")
+        print(f"TOKEN PREFIX: {settings.github_token[:10]}")
         print(f"STATUS: {response.status_code}")
         print(f"DIFF CONTENT:\n{diff[:500]}")
 
