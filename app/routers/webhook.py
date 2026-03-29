@@ -4,7 +4,6 @@ from hashlib import sha256
 
 from ..config import settings
 from ..services.analysis import run_analysis
-import os
 
 router = APIRouter()
 # Run server with: uv run uvicorn app.main:app --reload
@@ -65,20 +64,3 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
         "status": "received",
         "message": "Pull request event received and will be processed in the background.",
     }
-
-
-password = "supersecret123"
-api_key = "sk-1234567890abcdef"
-
-
-def get_user(user_id):
-    query = "SELECT * FROM users WHERE id = " + user_id
-    return query
-
-
-def process_items(items):
-    result = []
-    for i in items:
-        for j in items:
-            result.append(i + j)
-    return result
