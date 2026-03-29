@@ -1,3 +1,4 @@
+import httpx
 from openai import AsyncOpenAI
 from app.config import settings
 import json
@@ -48,8 +49,13 @@ async def review_diff(diff: str) -> dict:
 
 
 async def run_analysis(
-    diff: str, repo_full_name: str, pr_number: int, gh_delivery_id: str
+    diff_url: str, repo_full_name: str, pr_number: int, gh_delivery_id: str
 ):
+    # Fetch diff from url using httpx
+    async with httpx.AsyncClient() as client:
+        response = await client.get(diff_url)
+        diff = response.text
+
     feedback = await review_diff(diff)
 
     # AsyncSessionLocal is the session factory. Outside of FastAPI's dependency injection cycle (e.g. in background tasks), we use it directly as an async context manager to manually manage the session lifecycle.
