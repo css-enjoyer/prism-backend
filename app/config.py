@@ -11,7 +11,8 @@ class Settings(BaseSettings):
     prism_api_key: str
     openrouter_api_key: str
     openrouter_base_url: str
-    openrouter_model: str = "stepfun/step-3.5-flash:free"
+    openrouter_model: str = "meta-llama/llama-3.3-70b-instruct"
+    github_token: str
 
 
 settings = Settings()

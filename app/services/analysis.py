@@ -53,8 +53,16 @@ async def run_analysis(
 ):
     # Fetch diff from url using httpx
     async with httpx.AsyncClient() as client:
-        response = await client.get(diff_url)
+        response = await client.get(
+            diff_url,
+            headers={
+                "Authorization": f"Bearer {settings.github_token}",
+                "Accept": "application/vnd.github.v3.diff",
+            },
+        )
         diff = response.text
+        print(f"STATUS: {response.status_code}")
+        print(f"DIFF CONTENT:\n{diff[:500]}")
 
     feedback = await review_diff(diff)
 
