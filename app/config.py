@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     prism_api_key: str
     openrouter_api_key: str
     openrouter_base_url: str
-    openrouter_model: str = "google/gemini-flash-1.5"
+    openrouter_model: str = "stepfun/step-3.5-flash:free"
 
 
 settings = Settings()
