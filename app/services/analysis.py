@@ -3,6 +3,7 @@ from openai import AsyncOpenAI
 from app.config import settings
 import json
 import re
+from sqlalchemy import select
 
 from app.db.session import AsyncSessionLocal
 from ..models import Analysis
@@ -70,6 +71,13 @@ async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str)
 
     # AsyncSessionLocal is the session factory. Outside of FastAPI's dependency injection cycle (e.g. in background tasks), we use it directly as an async context manager to manually manage the session lifecycle.
     async with AsyncSessionLocal() as session:
+        # Idempotency check: if an analysis with the same gh_delivery_id already exists, we skip processing to avoid duplicates in case of webhook retries. This is important because Github may resend the same webhook multiple times if it doesn't receive a timely response, and we don't want to create multiple analyses for the same PR event.
+        existing = await session.execute(
+            select(Analysis).where(Analysis.gh_delivery_id == gh_delivery_id)
+        )
+        if existing.scalar_one_or_none():
+            return
+
         # Save results to database
         analysis = Analysis(
             repo_full_name=repo_full_name,

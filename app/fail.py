@@ -1,3 +1,5 @@
+# This file contains intentionally bad code to test the security scanning capabilities of our CI pipeline. Do not use any of the code in this file in production or for any real use case.
+
 password = "supersecret123"
 api_key = "sk-1234567890abcdef"
 
