@@ -118,11 +118,11 @@ async def post_pr_comment(repo_full_name: str, pr_number: int, feedback: dict):
     if not has_issues:
         lines.append("✅ No issues found.")
     else:
-        for key, (heading, _) in category_config.items():
+        for key, (heading, severity) in category_config.items():
             issues = feedback.get(key, [])
             if not issues:
                 continue
-            lines.append(f"### {heading}\n")
+            lines.append(f"### {heading} — ({severity})\n")
 
             # Group issues by file
             by_file = {}
