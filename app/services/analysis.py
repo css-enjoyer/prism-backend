@@ -95,7 +95,7 @@ async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str)
         session.add(analysis)
         await session.commit()
 
-    post_pr_comment(repo_full_name, pr_number, feedback)
+    await post_pr_comment(repo_full_name, pr_number, feedback)
 
 
 async def post_pr_comment(repo_full_name: str, pr_number: int, feedback: dict):
