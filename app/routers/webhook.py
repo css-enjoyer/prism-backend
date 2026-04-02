@@ -13,11 +13,6 @@ router = APIRouter()
 
 @router.post("/webhook")
 async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
-    # Check if pull request
-    event_type = request.headers.get("X-GitHub-Event")
-    if event_type != "pull_request":
-        return {"status": "ignored", "reason": f"Unsupported event type: {event_type}"}
-
     # Verify signature
     signature = request.headers.get("X-Hub-Signature-256")
     if not signature:
@@ -33,6 +28,11 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     received = signature.split("=", 1)[1]
     if not hmac.compare_digest(expected, received):
         raise HTTPException(status_code=403, detail="Invalid signature")
+
+    # Check if pull request
+    event_type = request.headers.get("X-GitHub-Event")
+    if event_type != "pull_request":
+        return {"status": "ignored", "reason": f"Unsupported event type: {event_type}"}
 
     body = await request.json()
 

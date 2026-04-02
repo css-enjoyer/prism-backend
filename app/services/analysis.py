@@ -85,5 +85,25 @@ async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str)
             gh_delivery_id=gh_delivery_id,
             feedback=feedback,
         )
+
+        # TODO: Log failed analysis and save to database.
         session.add(analysis)
         await session.commit()
+
+        prCommentUrl = (
+            f"https://api.github.com/repos/{repo_full_name}/issues/{pr_number}/comments"
+        )
+        lines = []
+        lines.append("## Bugs")
+        for issue in feedback["bugs"]:
+            lines.append(f"- **Line {issue['line']}**: {issue['description']}")
+            lines.append(f"  - Suggestion: {issue['suggestion']}")
+        comment_body = "\n".join(lines)
+
+        # Post review to pull request
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                prCommentUrl,
+                headers={"Authorization": f"Bearer {settings.github_token}"},
+                json={"body": comment_body},
+            )
