@@ -70,7 +70,6 @@ async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str)
         )
         diff = response.text
         # print(f"URL: {api_url}")
-        # print(f"TOKEN PREFIX: {settings.github_token[:10]}")
         # print(f"STATUS: {response.status_code}")
         # print(f"DIFF CONTENT:\n{diff[:500]}")
 
@@ -106,13 +105,13 @@ async def post_pr_comment(repo_full_name: str, pr_number: int, feedback: dict):
     )
 
     # TODO: Post line-specific comments.
+    # NOTE: Models are inconsistent with severity assessment, so for now severities are fixed to their categories, but in the future we may want to use the model's own severity assessment instead of hardcoding it here.
     category_config = {
-        "bugs": ("🐛 Bugs", "bug"),
-        "security": ("🔒 Security", "security"),
-        "performance": ("⚡ Performance", "performance"),
-        "style": ("📖 Style", "style"),
+        "bugs": ("🐛 Bugs", "🔴 Critical"),
+        "security": ("🔒 Security", "🔴 Critical"),
+        "performance": ("⚡ Performance", "🟡 Warning"),
+        "style": ("📖 Style", "⚪ Nitpick"),
     }
-
     lines = ["## Prism Code Review\n"]
 
     has_issues = any(feedback.get(key) for key in category_config)

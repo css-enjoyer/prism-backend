@@ -46,7 +46,7 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     repo_full_name = body["repository"]["full_name"]
     pr_number = body["pull_request"]["number"]
     gh_delivery_id = request.headers.get("X-GitHub-Delivery")
-    print(f"Delivery: {gh_delivery_id} | Repo: {repo_full_name} | PR: {pr_number}")
+    # print(f"Delivery: {gh_delivery_id} | Repo: {repo_full_name} | PR: {pr_number}")
 
     # Github needs a request within 10 seconds, so we will process the diff in the background and return immediately
     background_tasks.add_task(
