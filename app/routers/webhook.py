@@ -13,11 +13,6 @@ router = APIRouter()
 
 @router.post("/webhook")
 async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
-    # Check if pull request
-    event_type = request.headers.get("X-GitHub-Event")
-    if event_type != "pull_request":
-        return {"status": "ignored", "reason": f"Unsupported event type: {event_type}"}
-
     # Verify signature
     signature = request.headers.get("X-Hub-Signature-256")
     if not signature:
@@ -34,6 +29,11 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     if not hmac.compare_digest(expected, received):
         raise HTTPException(status_code=403, detail="Invalid signature")
 
+    # Check if pull request
+    event_type = request.headers.get("X-GitHub-Event")
+    if event_type != "pull_request":
+        return {"status": "ignored", "reason": f"Unsupported event type: {event_type}"}
+
     body = await request.json()
 
     # Check if pull request is opened or updated
@@ -46,7 +46,7 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     repo_full_name = body["repository"]["full_name"]
     pr_number = body["pull_request"]["number"]
     gh_delivery_id = request.headers.get("X-GitHub-Delivery")
-    print(f"Delivery: {gh_delivery_id} | Repo: {repo_full_name} | PR: {pr_number}")
+    # print(f"Delivery: {gh_delivery_id} | Repo: {repo_full_name} | PR: {pr_number}")
 
     # Github needs a request within 10 seconds, so we will process the diff in the background and return immediately
     background_tasks.add_task(

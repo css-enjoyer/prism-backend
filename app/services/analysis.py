@@ -10,20 +10,22 @@ from ..models import Analysis
 
 SYSTEM_PROMPT = """You are a senior software engineer performing a code review. Analyze the provided git diff and identify issues across exactly four categories.
 
+Only report an issue if you are certain it is a problem based on the code shown in the diff. Do not speculate about code that is not shown. For each issue, provide a clear description of what the problem is and why it is an issue, along with a specific suggestion for how to fix it.
+
 Return ONLY a JSON object in this exact structure, no markdown, no explanation:
 
 {
   "bugs": [
-    {"line": "<line number or range>", "description": "<what the bug is and why it's wrong>", "suggestion": "<how to fix it>"}
+    {"file": "<filename e.g. app/routers/webhook.py>", "line": "<line number or range>", "description": "<what the bug is and why it's wrong>", "suggestion": "<how to fix it>"}
   ],
   "security": [
-    {"line": "<line number or range>", "description": "<what the vulnerability is>", "suggestion": "<how to fix it>"}
+    {"file": "<filename e.g. app/routers/webhook.py>", "line": "<line number or range>", "description": "<what the vulnerability is>", "suggestion": "<how to fix it>"}
   ],
   "performance": [
-    {"line": "<line number or range>", "description": "<what the issue is>", "suggestion": "<how to improve it>"}
+    {"file": "<filename e.g. app/routers/webhook.py>", "line": "<line number or range>", "description": "<what the issue is>", "suggestion": "<how to improve it>"}
   ],
   "style": [
-    {"line": "<line number or range>", "description": "<what the issue is>", "suggestion": "<how to improve it>"}
+    {"file": "<filename e.g. app/routers/webhook.py>", "line": "<line number or range>", "description": "<what the issue is>", "suggestion": "<how to improve it>"}
   ]
 }
 
@@ -46,7 +48,12 @@ async def review_diff(diff: str) -> dict:
     )
     result = response.choices[0].message.content
     result = re.sub(r"^```json\s*|\s*```$", "", result.strip())
-    return json.loads(result)
+    # print(f"RAW MODEL OUTPUT:\n{result}")
+    try:
+        return json.loads(result)
+    except json.JSONDecodeError as e:
+        print(f"Failed to parse model response: {e}\nRaw output: {result}")
+        raise
 
 
 async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str):
@@ -62,10 +69,9 @@ async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str)
             },
         )
         diff = response.text
-        print(f"URL: {api_url}")
-        print(f"TOKEN PREFIX: {settings.github_token[:10]}")
-        print(f"STATUS: {response.status_code}")
-        print(f"DIFF CONTENT:\n{diff[:500]}")
+        # print(f"URL: {api_url}")
+        # print(f"STATUS: {response.status_code}")
+        # print(f"DIFF CONTENT:\n{diff[:500]}")
 
     feedback = await review_diff(diff)
 
@@ -85,5 +91,64 @@ async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str)
             gh_delivery_id=gh_delivery_id,
             feedback=feedback,
         )
+
+        # TODO: Log failed analysis and save to database.
         session.add(analysis)
         await session.commit()
+
+    await post_pr_comment(repo_full_name, pr_number, feedback)
+
+
+async def post_pr_comment(repo_full_name: str, pr_number: int, feedback: dict):
+    pr_comment_url = (
+        f"https://api.github.com/repos/{repo_full_name}/issues/{pr_number}/comments"
+    )
+
+    # TODO: Post line-specific comments.
+    # NOTE: Models are inconsistent with severity assessment, so for now severities are fixed to their categories, but in the future we may want to use the model's own severity assessment instead of hardcoding it here.
+    category_config = {
+        "bugs": ("🐛 Bugs", "🔴 Critical"),
+        "security": ("🔒 Security", "🔴 Critical"),
+        "performance": ("⚡ Performance", "🟡 Warning"),
+        "style": ("📖 Style", "⚪ Nitpick"),
+    }
+    lines = ["## Prism Code Review\n"]
+
+    has_issues = any(feedback.get(key) for key in category_config)
+    if not has_issues:
+        lines.append("✅ No issues found.")
+    else:
+        for key, (heading, severity) in category_config.items():
+            issues = feedback.get(key, [])
+            if not issues:
+                continue
+            lines.append(f"### {heading} — {severity}\n")
+
+            # Group issues by file
+            by_file = {}
+            for issue in issues:
+                file = issue.get("file", "unknown")
+                by_file.setdefault(file, []).append(issue)
+
+            for file, file_issues in by_file.items():
+                lines.append(f"**`{file}`**\n")
+                lines.append("| Line | Issue | Suggestion |")
+                lines.append("|------|-------|------------|")
+                for issue in file_issues:
+                    line = issue["line"].replace("|", "\\|")
+                    desc = issue["description"].replace("|", "\\|")
+                    sugg = issue["suggestion"].replace("|", "\\|")
+                    lines.append(f"| {line} | {desc} | {sugg} |")
+                lines.append("")
+
+    lines.append("\n---")
+    lines.append("*Generated by [Prism](https://github.com/css-enjoyer/prism-backend)*")
+
+    comment_body = "\n".join(lines)
+
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            pr_comment_url,
+            headers={"Authorization": f"Bearer {settings.github_token}"},
+            json={"body": comment_body},
+        )
