@@ -2,15 +2,13 @@
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 
+
 class AnalysisResponse(BaseModel):
-  model_config = ConfigDict(from_attributes=True)
-  
-  id: int
-  repo_full_name: str
-  pr_number: int
-  gh_delivery_id: str
-  feedback: dict
-  created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
 
-
-
+    id: int
+    repo_full_name: str
+    pr_number: int
+    # gh_delivery_id: str -> we don't need this in the response, it's only used internally to correlate with GitHub events
+    feedback: dict
+    created_at: datetime
