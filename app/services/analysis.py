@@ -6,6 +6,7 @@ import re
 from sqlalchemy import select
 
 from app.db.session import AsyncSessionLocal
+from app.models.analysis import AnalysisStatus
 from ..models import Analysis
 
 SYSTEM_PROMPT = """You are a senior software engineer performing a code review. Analyze the provided git diff and identify issues across exactly four categories.
@@ -15,21 +16,28 @@ Only report an issue if you are certain it is a problem based on the code shown 
 Return ONLY a JSON object in this exact structure, no markdown, no explanation:
 
 {
-  "bugs": [
-    {"file": "<filename e.g. app/routers/webhook.py>", "line": "<line number or range>", "description": "<what the bug is and why it's wrong>", "suggestion": "<how to fix it>"}
-  ],
-  "security": [
-    {"file": "<filename e.g. app/routers/webhook.py>", "line": "<line number or range>", "description": "<what the vulnerability is>", "suggestion": "<how to fix it>"}
-  ],
-  "performance": [
-    {"file": "<filename e.g. app/routers/webhook.py>", "line": "<line number or range>", "description": "<what the issue is>", "suggestion": "<how to improve it>"}
-  ],
-  "style": [
-    {"file": "<filename e.g. app/routers/webhook.py>", "line": "<line number or range>", "description": "<what the issue is>", "suggestion": "<how to improve it>"}
-  ]
+    "bugs": [
+        {"file": "<filename e.g. app/routers/webhook.py>", "line": "<line number or range>", "description": "<what the bug is and why it's wrong>", "suggestion": "<how to fix it>"}
+    ],
+    "security": [
+        {"file": "<filename e.g. app/routers/webhook.py>", "line": "<line number or range>", "description": "<what the vulnerability is>", "suggestion": "<how to fix it>"}
+    ],
+    "performance": [
+        {"file": "<filename e.g. app/routers/webhook.py>", "line": "<line number or range>", "description": "<what the issue is>", "suggestion": "<how to improve it>"}
+    ],
+    "style": [
+        {"file": "<filename e.g. app/routers/webhook.py>", "line": "<line number or range>", "description": "<what the issue is>", "suggestion": "<how to improve it>"}
+    ]
 }
 
 Each array may be empty if no issues are found in that category. Do not include any text outside the JSON object."""
+
+EMPTY_FEEDBACK = {
+    "bugs": [],
+    "security": [],
+    "performance": [],
+    "style": [],
+}
 
 client = AsyncOpenAI(
     api_key=settings.openrouter_api_key,
@@ -59,44 +67,57 @@ async def review_diff(diff: str) -> dict:
 async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str):
     api_url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}"
 
-    # Fetch diff from url using httpx
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            api_url,
-            headers={
-                "Authorization": f"Bearer {settings.github_token}",
-                "Accept": "application/vnd.github.v3.diff",
-            },
-        )
-        diff = response.text
-        # print(f"URL: {api_url}")
-        # print(f"STATUS: {response.status_code}")
-        # print(f"DIFF CONTENT:\n{diff[:500]}")
+    # 1. Fetch diff from url using httpx
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                api_url,
+                headers={
+                    "Authorization": f"Bearer {settings.github_token}",
+                    "Accept": "application/vnd.github.v3.diff",
+                },
+            )
+            response.raise_for_status()
+            diff = response.text
+        # 2. Analyze diff with LLM, normalize resulting feedback
+        feedback = normalize_feedback(await review_diff(diff))
+    except Exception as e:
+        await _save_error_feedback(repo_full_name, pr_number, gh_delivery_id, e)
+        return
 
-    feedback = await review_diff(diff)
+    # 3. Save results to database
+    try:
+        # AsyncSessionLocal is the session factory. Outside of FastAPI's dependency injection cycle (e.g. in background tasks), we use it directly as an async context manager to manually manage the session lifecycle.
+        async with AsyncSessionLocal() as session:
+            # Idempotency check: if an analysis with the same gh_delivery_id already exists, we skip processing to avoid duplicates in case of webhook retries.
+            existing = await session.execute(
+                select(Analysis).where(Analysis.gh_delivery_id == gh_delivery_id)
+            )
+            if existing.scalar_one_or_none():
+                return
 
-    # AsyncSessionLocal is the session factory. Outside of FastAPI's dependency injection cycle (e.g. in background tasks), we use it directly as an async context manager to manually manage the session lifecycle.
-    async with AsyncSessionLocal() as session:
-        # Idempotency check: if an analysis with the same gh_delivery_id already exists, we skip processing to avoid duplicates in case of webhook retries. This is important because Github may resend the same webhook multiple times if it doesn't receive a timely response, and we don't want to create multiple analyses for the same PR event.
-        existing = await session.execute(
-            select(Analysis).where(Analysis.gh_delivery_id == gh_delivery_id)
-        )
-        if existing.scalar_one_or_none():
-            return
+            analysis = Analysis(
+                repo_full_name=repo_full_name,
+                pr_number=pr_number,
+                gh_delivery_id=gh_delivery_id,
+                feedback=feedback,
+                status=AnalysisStatus.completed,
+                error=None,
+            )
 
-        # Save results to database
-        analysis = Analysis(
-            repo_full_name=repo_full_name,
-            pr_number=pr_number,
-            gh_delivery_id=gh_delivery_id,
-            feedback=feedback,
-        )
+            # TODO: Log failed analysis and save to database.
+            session.add(analysis)
+            await session.commit()
 
-        # TODO: Log failed analysis and save to database.
-        session.add(analysis)
-        await session.commit()
+    except Exception as e:
+        await _save_error_feedback(repo_full_name, pr_number, gh_delivery_id, e)
+        return
 
-    await post_pr_comment(repo_full_name, pr_number, feedback)
+    # 4. Post feedback as a PR comment
+    try:
+        await post_pr_comment(repo_full_name, pr_number, feedback)
+    except Exception as e:
+        await _save_comment_error(repo_full_name, pr_number, gh_delivery_id, e)
 
 
 async def post_pr_comment(repo_full_name: str, pr_number: int, feedback: dict):
@@ -147,8 +168,83 @@ async def post_pr_comment(repo_full_name: str, pr_number: int, feedback: dict):
     comment_body = "\n".join(lines)
 
     async with httpx.AsyncClient() as client:
-        await client.post(
+        response = await client.post(
             pr_comment_url,
             headers={"Authorization": f"Bearer {settings.github_token}"},
             json={"body": comment_body},
         )
+        response.raise_for_status()
+
+
+async def _save_error_feedback(
+    repo_full_name: str,
+    pr_number: int,
+    gh_delivery_id: str,
+    error: Exception,
+):
+    await _save_error(
+        repo_full_name=repo_full_name,
+        pr_number=pr_number,
+        gh_delivery_id=gh_delivery_id,
+        error_message=str(error),
+        preserve_existing_status=False,
+    )
+
+
+async def _save_comment_error(
+    repo_full_name: str,
+    pr_number: int,
+    gh_delivery_id: str,
+    error: Exception,
+):
+    await _save_error(
+        repo_full_name=repo_full_name,
+        pr_number=pr_number,
+        gh_delivery_id=gh_delivery_id,
+        error_message=f"comment_error: {error}",
+        preserve_existing_status=True,
+    )
+
+
+async def _save_error(
+    repo_full_name: str,
+    pr_number: int,
+    gh_delivery_id: str,
+    error_message: str,
+    preserve_existing_status: bool,
+):
+    async with AsyncSessionLocal() as session:
+        existing = await session.execute(
+            select(Analysis).where(Analysis.gh_delivery_id == gh_delivery_id)
+        )
+        analysis = existing.scalar_one_or_none()
+
+        if analysis is None:
+            analysis = Analysis(
+                repo_full_name=repo_full_name,
+                pr_number=pr_number,
+                gh_delivery_id=gh_delivery_id,
+                feedback=EMPTY_FEEDBACK.copy(),
+                status=AnalysisStatus.error,
+                error=error_message,
+            )
+            session.add(analysis)
+        else:
+            if not preserve_existing_status:
+                analysis.status = AnalysisStatus.error
+            analysis.error = error_message
+
+        await session.commit()
+
+
+def normalize_feedback(feedback: dict | None) -> dict:
+    # Ensure all expected keys are present and that feedback is in the correct format. This can help mitigate issues with model output inconsistencies.
+    if not isinstance(feedback, dict):
+        return EMPTY_FEEDBACK.copy()
+
+    normalized = EMPTY_FEEDBACK.copy()
+    for key in normalized:
+        value = feedback.get(key, [])
+        normalized[key] = value if isinstance(value, list) else []
+
+    return normalized

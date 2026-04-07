@@ -2,6 +2,8 @@
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 
+from app.models.analysis import AnalysisStatus
+
 
 class AnalysisResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -12,3 +14,5 @@ class AnalysisResponse(BaseModel):
     # gh_delivery_id: str -> we don't need this in the response, it's only used internally to correlate with GitHub events
     feedback: dict
     created_at: datetime
+    status: AnalysisStatus
+    error: str | None = None
