@@ -10,7 +10,7 @@ from . import Base
 
 class AnalysisStatus(str, enum.Enum):
     completed = "completed"
-    pending = "pending"  # still not sure if needed
+    pending = "pending"
     error = "error"
 
 

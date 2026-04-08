@@ -45,25 +45,6 @@ client = AsyncOpenAI(
 )
 
 
-# This function will be called in the background after receiving the webhook, so we can take our time to analyze the diff without worrying about Github's 10 second timeout. The diff will be passed as a string and we will return the analysis as a dict.
-async def review_diff(diff: str) -> dict:
-    response = await client.chat.completions.create(
-        model=settings.openrouter_model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": diff},
-        ],
-    )
-    result = response.choices[0].message.content
-    result = re.sub(r"^```json\s*|\s*```$", "", result.strip())
-    # print(f"RAW MODEL OUTPUT:\n{result}")
-    try:
-        return json.loads(result)
-    except json.JSONDecodeError as e:
-        print(f"Failed to parse model response: {e}\nRaw output: {result}")
-        raise
-
-
 async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str):
     api_url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}"
 
@@ -82,7 +63,7 @@ async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str)
         # 2. Analyze diff with LLM, normalize resulting feedback
         feedback = normalize_feedback(await review_diff(diff))
     except Exception as e:
-        await _save_error_feedback(repo_full_name, pr_number, gh_delivery_id, e)
+        await _save_feedback_error(repo_full_name, pr_number, gh_delivery_id, e)
         return
 
     # 3. Save results to database
@@ -105,12 +86,11 @@ async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str)
                 error=None,
             )
 
-            # TODO: Log failed analysis and save to database.
             session.add(analysis)
             await session.commit()
 
     except Exception as e:
-        await _save_error_feedback(repo_full_name, pr_number, gh_delivery_id, e)
+        await _save_feedback_error(repo_full_name, pr_number, gh_delivery_id, e)
         return
 
     # 4. Post feedback as a PR comment
@@ -118,6 +98,24 @@ async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str)
         await post_pr_comment(repo_full_name, pr_number, feedback)
     except Exception as e:
         await _save_comment_error(repo_full_name, pr_number, gh_delivery_id, e)
+
+
+async def review_diff(diff: str) -> dict:
+    response = await client.chat.completions.create(
+        model=settings.openrouter_model,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": diff},
+        ],
+    )
+    result = response.choices[0].message.content
+    result = re.sub(r"^```json\s*|\s*```$", "", result.strip())
+    # print(f"RAW MODEL OUTPUT:\n{result}")
+    try:
+        return json.loads(result)
+    except json.JSONDecodeError as e:
+        print(f"Failed to parse model response: {e}\nRaw output: {result}")
+        raise
 
 
 async def post_pr_comment(repo_full_name: str, pr_number: int, feedback: dict):
@@ -176,7 +174,7 @@ async def post_pr_comment(repo_full_name: str, pr_number: int, feedback: dict):
         response.raise_for_status()
 
 
-async def _save_error_feedback(
+async def _save_feedback_error(
     repo_full_name: str,
     pr_number: int,
     gh_delivery_id: str,
