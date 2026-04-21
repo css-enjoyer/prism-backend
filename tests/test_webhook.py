@@ -1,3 +1,5 @@
+#
+# * This test file focuses on the /webhook endpoint, which is the entry point for GitHub webhook events. The tests cover various scenarios related to signature verification, event type handling, and action handling.
 import hmac
 import json
 from hashlib import sha256
@@ -19,38 +21,39 @@ def make_signature(body_bytes: bytes) -> str:
     )
 
 
+# ---------------------------------------------------------------------------- #
 # 1. No signature header - 401
-def test_missing_signature(client):
+def test_missing_signature(client_empty_db):
     # Arrange: no setup needed
     # Act: POST with no headers
-    response = client.post("/webhook")
+    response = client_empty_db.post("/webhook")
     # Assert: 401 Unauthorized
     assert response.status_code == 401
 
 
 # 2. Invalid signature format - 403
 # Doesn't start with "sha256="
-def test_invalid_signature_format(client):
+def test_invalid_signature_format(client_empty_db):
     # Arrange: create a signature that doesn't start with "sha256="
     headers = {"X-Hub-Signature-256": "invalidsignature"}
     # Act: POST with invalid signature format
-    response = client.post("/webhook", headers=headers)
+    response = client_empty_db.post("/webhook", headers=headers)
     # Assert: 403 Forbidden
     assert response.status_code == 403
 
 
 # 3. Invalid signature - 403
-def test_invalid_signature(client):
+def test_invalid_signature(client_empty_db):
     # Arrange: create a signature with correct format but wrong value
     headers = {"X-Hub-Signature-256": "sha256=invalidsignature"}
     # Act: POST with invalid signature
-    response = client.post("/webhook", headers=headers)
+    response = client_empty_db.post("/webhook", headers=headers)
     # Assert: 403 Forbidden
     assert response.status_code == 403
 
 
 # 4. Unsupported event type - 200 with ignored status
-def test_unsupported_event_type(client):
+def test_unsupported_event_type(client_empty_db):
     # Arrange: sign an empty body (no json payload sent)
     body_bytes = b""
     headers = {
@@ -58,14 +61,14 @@ def test_unsupported_event_type(client):
         "X-GitHub-Event": "issues",  # Not pull_request
     }
     # Act: POST with unsupported event type
-    response = client.post("/webhook", headers=headers, content=body_bytes)
+    response = client_empty_db.post("/webhook", headers=headers, content=body_bytes)
     # Assert: 200 OK with ignored status
     assert response.status_code == 200
     assert response.json()["status"] == "ignored"
 
 
 # 5. Unsupported action - 200 with ignored status
-def test_unsupported_action(client):
+def test_unsupported_action(client_empty_db):
     # Arrange: sign the exact bytes we'll send
     body = {"action": "closed"}
     body_bytes = json.dumps(body).encode()
@@ -74,14 +77,14 @@ def test_unsupported_action(client):
         "X-GitHub-Event": "pull_request",
     }
     # Act: POST with unsupported action (e.g., "closed")
-    response = client.post("/webhook", headers=headers, content=body_bytes)
+    response = client_empty_db.post("/webhook", headers=headers, content=body_bytes)
     # Assert: 200 OK with ignored status
     assert response.status_code == 200
     assert response.json()["status"] == "ignored"
 
 
 # 6. Valid request - 200 with received status
-def test_valid_request(client):
+def test_valid_request(client_empty_db):
     # Arrange: build a full PR body matching what GitHub sends, then sign it
     body = {
         "action": "opened",
@@ -95,7 +98,7 @@ def test_valid_request(client):
         "X-GitHub-Delivery": "test-delivery-id",
     }
     # Act: POST with valid request
-    response = client.post("/webhook", headers=headers, content=body_bytes)
+    response = client_empty_db.post("/webhook", headers=headers, content=body_bytes)
     # Assert: 200 OK with received status
     assert response.status_code == 200
     assert response.json()["status"] == "received"

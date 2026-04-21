@@ -180,13 +180,16 @@ async def _save_feedback_error(
     gh_delivery_id: str,
     error: Exception,
 ):
-    await _save_error(
-        repo_full_name=repo_full_name,
-        pr_number=pr_number,
-        gh_delivery_id=gh_delivery_id,
-        error_message=str(error),
-        preserve_existing_status=False,
-    )
+    try:
+        await _save_error(
+            repo_full_name=repo_full_name,
+            pr_number=pr_number,
+            gh_delivery_id=gh_delivery_id,
+            error_message=str(error),
+            preserve_existing_status=False,
+        )
+    except Exception as e:
+        print(f"Failed to save feedback error: {e}")
 
 
 async def _save_comment_error(
@@ -195,13 +198,16 @@ async def _save_comment_error(
     gh_delivery_id: str,
     error: Exception,
 ):
-    await _save_error(
-        repo_full_name=repo_full_name,
-        pr_number=pr_number,
-        gh_delivery_id=gh_delivery_id,
-        error_message=f"comment_error: {error}",
-        preserve_existing_status=True,
-    )
+    try:
+        await _save_error(
+            repo_full_name=repo_full_name,
+            pr_number=pr_number,
+            gh_delivery_id=gh_delivery_id,
+            error_message=f"comment_error: {error}",
+            preserve_existing_status=True,
+        )
+    except Exception as e:
+        print(f"Failed to save comment error: {e}")
 
 
 async def _save_error(

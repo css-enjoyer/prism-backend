@@ -10,6 +10,7 @@ from app.schemas.analysis import AnalysisResponse
 router = APIRouter()
 
 
+# ? Not sure if needed, code reviews are tied with github prs
 @router.post("/review-diff", dependencies=[Depends(verify_api_key)])
 async def review_diff():
     pass
