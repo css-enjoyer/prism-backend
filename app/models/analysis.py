@@ -5,7 +5,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
 from sqlalchemy import Enum, func
 
-from . import Base
+from .base import Base
 
 
 class AnalysisStatus(str, enum.Enum):
