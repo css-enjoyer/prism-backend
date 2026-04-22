@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str
     openrouter_base_url: str
     openrouter_model: str = "meta-llama/llama-3.3-70b-instruct"
-    github_token: str
+    gh_token: str
 
 
 settings = Settings()

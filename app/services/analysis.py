@@ -54,7 +54,7 @@ async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str)
             response = await client.get(
                 api_url,
                 headers={
-                    "Authorization": f"Bearer {settings.github_token}",
+                    "Authorization": f"Bearer {settings.gh_token}",
                     "Accept": "application/vnd.github.v3.diff",
                 },
             )
@@ -168,7 +168,7 @@ async def post_pr_comment(repo_full_name: str, pr_number: int, feedback: dict):
     async with httpx.AsyncClient() as client:
         response = await client.post(
             pr_comment_url,
-            headers={"Authorization": f"Bearer {settings.github_token}"},
+            headers={"Authorization": f"Bearer {settings.gh_token}"},
             json={"body": comment_body},
         )
         response.raise_for_status()
