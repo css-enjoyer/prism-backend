@@ -125,7 +125,6 @@ To receive webhooks locally, use [ngrok](https://ngrok.com/) or [smee.io](https:
 
 - **No task queue** — Background tasks run in-process. If the server restarts mid-analysis, the task is lost. A production system would use ARQ or Celery with a Redis broker.
 - **No rate limiting** — A high volume of webhook deliveries would each trigger an LLM call. `slowapi` or a reverse proxy rule would address this.
-- **No Alembic** — Schema was created directly in Supabase's SQL editor. Schema changes require manual SQL.
 - **Single-tenant** — One GitHub account, one API key. No multi-user or multi-repo registration.
 
 ---
