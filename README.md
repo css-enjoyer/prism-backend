@@ -129,29 +129,6 @@ To receive webhooks locally, use [ngrok](https://ngrok.com/) or [smee.io](https:
 
 ---
 
-## Project Structure
-
-```
-prism-backend/
-├── app/
-│   ├── main.py          # FastAPI app, route definitions
-│   ├── config.py        # Pydantic BaseSettings
-│   ├── models.py        # SQLAlchemy ORM models
-│   ├── schemas.py       # Pydantic request/response schemas
-│   ├── dependencies.py  # FastAPI dependencies (auth, db session)
-│   ├── services/
-│   │   ├── analysis.py  # Core run_analysis logic
-│   │   ├── github.py    # GitHub API client
-│   │   └── llm.py       # OpenRouter client
-│   └── database.py      # Async engine and session setup
-├── tests/
-├── Dockerfile
-├── .github/workflows/ci.yml
-└── requirements.txt
-```
-
----
-
 ## CI
 
 GitHub Actions runs on every push to `main` and every PR targeting `main`:
