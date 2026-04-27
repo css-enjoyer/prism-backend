@@ -1,4 +1,6 @@
 # Prism
+> ⚠️ **Not intended for production use** - This is purely a learning project built to explore  webhook integration, external API consumption,
+background task processing, database persistence, authentication, containerization, Github Actions CI/CD, E2E testing, async Python, and LLM inference APIs.
 
 **Automated code review powered by LLMs, delivered as a GitHub PR comment.**
 
