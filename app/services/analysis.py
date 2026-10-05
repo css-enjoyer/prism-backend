@@ -3,7 +3,7 @@ from openai import AsyncOpenAI
 from app.config import settings
 import json
 import re
-from sqlalchemy import select, update
+from sqlalchemy import update
 
 from app.db.session import AsyncSessionLocal
 from app.models.analysis import AnalysisStatus
