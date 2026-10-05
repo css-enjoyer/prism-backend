@@ -24,7 +24,7 @@ async def create_mock_db_empty():
     mock_db = AsyncMock()
 
     fake_db_result = MagicMock()
-    fake_db_result.scalars.return_value.all.return_value = []
+    fake_db_result.scalars.return_value.all.return_value = 1
 
     mock_db.execute.return_value = fake_db_result
     yield mock_db
@@ -107,5 +107,24 @@ async def create_mock_db_with_no_result():
     mock_db = AsyncMock()
     fake_db_result = MagicMock()
     fake_db_result.scalar_one_or_none.return_value = None  # ← returns None
+    mock_db.execute.return_value = fake_db_result
+    yield mock_db
+
+
+# --------------------------------- Duplicate delivery -------------------------------- #
+@pytest.fixture
+def client_duplicate_delivery():
+    app.dependency_overrides[get_db] = create_mock_db_duplicate
+    with TestClient(app) as client:
+        yield client
+        app.dependency_overrides.clear()
+
+
+async def create_mock_db_duplicate():
+    mock_db = AsyncMock()
+    fake_db_result = MagicMock()
+    fake_db_result.scalar_one_or_none.return_value = (
+        None  # insert skipped: id already exists
+    )
     mock_db.execute.return_value = fake_db_result
     yield mock_db

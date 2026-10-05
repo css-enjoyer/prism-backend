@@ -5,6 +5,7 @@ import json
 from hashlib import sha256
 
 from app.config import settings
+from unittest.mock import AsyncMock
 
 WEBHOOK_SECRET = settings.webhook_secret.encode()
 
@@ -84,7 +85,10 @@ def test_unsupported_action(client_empty_db):
 
 
 # 6. Valid request - 200 with received status
-def test_valid_request(client_empty_db):
+def test_valid_request(client_empty_db, monkeypatch):
+    run_mock = AsyncMock()
+    monkeypatch.setattr("app.routers.webhook.run_analysis", run_mock)
+
     # Arrange: build a full PR body matching what GitHub sends, then sign it
     body = {
         "action": "opened",
@@ -102,3 +106,30 @@ def test_valid_request(client_empty_db):
     # Assert: 200 OK with received status
     assert response.status_code == 200
     assert response.json()["status"] == "received"
+    run_mock.assert_awaited_once_with(1, "test-org/test-repo", 1)
+
+
+# 7. Duplicate request - 200 and unique
+def test_duplicate_delivery(client_duplicate_delivery, monkeypatch):
+    run_mock = AsyncMock()
+    monkeypatch.setattr("app.routers.webhook.run_analysis", run_mock)
+
+    # Arrange: build a full PR body matching what GitHub sends, then sign it
+    body = {
+        "action": "opened",
+        "repository": {"full_name": "test-org/test-repo"},
+        "pull_request": {"number": 1},
+    }
+    body_bytes = json.dumps(body).encode()
+    headers = {
+        "X-Hub-Signature-256": make_signature(body_bytes),
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "test-delivery-id",
+    }
+    # Act: POST with valid request
+    response = client_duplicate_delivery.post(
+        "/webhook", headers=headers, content=body_bytes
+    )
+    # Assert: 200 OK with received status
+    assert response.json() == {"status": "ignored", "reason": "Duplicated delivery"}
+    run_mock.assert_not_awaited()

@@ -3,7 +3,7 @@ from openai import AsyncOpenAI
 from app.config import settings
 import json
 import re
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.db.session import AsyncSessionLocal
 from app.models.analysis import AnalysisStatus
@@ -45,10 +45,10 @@ client = AsyncOpenAI(
 )
 
 
-async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str):
+async def run_analysis(analysis_id: int, repo_full_name: str, pr_number: int):
     api_url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}"
 
-    # 1. Fetch diff from url using httpx
+    # 1. Fetch diff from github using httpx, analyze with LLM
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -63,41 +63,29 @@ async def run_analysis(repo_full_name: str, pr_number: int, gh_delivery_id: str)
         # 2. Analyze diff with LLM, normalize resulting feedback
         feedback = normalize_feedback(await review_diff(diff))
     except Exception as e:
-        await _save_feedback_error(repo_full_name, pr_number, gh_delivery_id, e)
+        await _mark_error(analysis_id, str(e))
         return
 
-    # 3. Save results to database
+    # 3. Save results to existing row
     try:
         # AsyncSessionLocal is the session factory. Outside of FastAPI's dependency injection cycle (e.g. in background tasks), we use it directly as an async context manager to manually manage the session lifecycle.
         async with AsyncSessionLocal() as session:
-            # Idempotency check: if an analysis with the same gh_delivery_id already exists, we skip processing to avoid duplicates in case of webhook retries.
-            existing = await session.execute(
-                select(Analysis).where(Analysis.gh_delivery_id == gh_delivery_id)
+            await session.execute(
+                update(Analysis)
+                .where(Analysis.id == analysis_id)
+                .values(feedback=feedback, status=AnalysisStatus.completed)
             )
-            if existing.scalar_one_or_none():
-                return
-
-            analysis = Analysis(
-                repo_full_name=repo_full_name,
-                pr_number=pr_number,
-                gh_delivery_id=gh_delivery_id,
-                feedback=feedback,
-                status=AnalysisStatus.completed,
-                error=None,
-            )
-
-            session.add(analysis)
             await session.commit()
 
     except Exception as e:
-        await _save_feedback_error(repo_full_name, pr_number, gh_delivery_id, e)
+        await _mark_error(analysis_id, str(e))
         return
 
-    # 4. Post feedback as a PR comment
+    # 4. Post comment
     try:
         await post_pr_comment(repo_full_name, pr_number, feedback)
     except Exception as e:
-        await _save_comment_error(repo_full_name, pr_number, gh_delivery_id, e)
+        await _record_comment_error(analysis_id, f"comment_error: {e}")
 
 
 async def review_diff(diff: str) -> dict:
@@ -174,71 +162,28 @@ async def post_pr_comment(repo_full_name: str, pr_number: int, feedback: dict):
         response.raise_for_status()
 
 
-async def _save_feedback_error(
-    repo_full_name: str,
-    pr_number: int,
-    gh_delivery_id: str,
-    error: Exception,
-):
+async def _mark_error(analysis_id: int, message: str):
     try:
-        await _save_error(
-            repo_full_name=repo_full_name,
-            pr_number=pr_number,
-            gh_delivery_id=gh_delivery_id,
-            error_message=str(error),
-            preserve_existing_status=False,
-        )
-    except Exception as e:
-        print(f"Failed to save feedback error: {e}")
-
-
-async def _save_comment_error(
-    repo_full_name: str,
-    pr_number: int,
-    gh_delivery_id: str,
-    error: Exception,
-):
-    try:
-        await _save_error(
-            repo_full_name=repo_full_name,
-            pr_number=pr_number,
-            gh_delivery_id=gh_delivery_id,
-            error_message=f"comment_error: {error}",
-            preserve_existing_status=True,
-        )
-    except Exception as e:
-        print(f"Failed to save comment error: {e}")
-
-
-async def _save_error(
-    repo_full_name: str,
-    pr_number: int,
-    gh_delivery_id: str,
-    error_message: str,
-    preserve_existing_status: bool,
-):
-    async with AsyncSessionLocal() as session:
-        existing = await session.execute(
-            select(Analysis).where(Analysis.gh_delivery_id == gh_delivery_id)
-        )
-        analysis = existing.scalar_one_or_none()
-
-        if analysis is None:
-            analysis = Analysis(
-                repo_full_name=repo_full_name,
-                pr_number=pr_number,
-                gh_delivery_id=gh_delivery_id,
-                feedback=EMPTY_FEEDBACK.copy(),
-                status=AnalysisStatus.error,
-                error=error_message,
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Analysis)
+                .where(Analysis.id == analysis_id)
+                .values(status=AnalysisStatus.error, error=message)
             )
-            session.add(analysis)
-        else:
-            if not preserve_existing_status:
-                analysis.status = AnalysisStatus.error
-            analysis.error = error_message
+            await session.commit()
+    except Exception as e:
+        print(f"Failed to save error for analysis {analysis_id}: {e}")
 
-        await session.commit()
+
+async def _record_comment_error(analysis_id: int, message: str):
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Analysis).where(Analysis.id == analysis_id).values(error=message)
+            )
+            await session.commit()
+    except Exception as e:
+        print(f"Failed to save comment error for analysis {analysis_id}: {e}")
 
 
 def normalize_feedback(feedback: dict | None) -> dict:

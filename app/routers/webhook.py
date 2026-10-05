@@ -1,9 +1,13 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 import hmac
 from hashlib import sha256
 
+from ..db.session import get_db
+from ..models.analysis import Analysis, AnalysisStatus
 from ..config import settings
-from ..services.analysis import run_analysis
+from ..services.analysis import EMPTY_FEEDBACK, run_analysis
 
 router = APIRouter()
 # Run server with: uv run uvicorn app.main:app --reload
@@ -12,7 +16,11 @@ router = APIRouter()
 
 
 @router.post("/webhook")
-async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
+async def handle_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     # Verify signature
     signature = request.headers.get("X-Hub-Signature-256")
     if not signature:
@@ -46,14 +54,38 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     repo_full_name = body["repository"]["full_name"]
     pr_number = body["pull_request"]["number"]
     gh_delivery_id = request.headers.get("X-GitHub-Delivery")
+
+    if not gh_delivery_id:
+        raise HTTPException(status_code=400, detail="Missing delivery id header")
+
+    # Upon valid request, record into db
+    stmt = (
+        pg_insert(Analysis)
+        .values(
+            repo_full_name=repo_full_name,
+            pr_number=pr_number,
+            gh_delivery_id=gh_delivery_id,
+            feedback=EMPTY_FEEDBACK,
+            status=AnalysisStatus.pending,
+        )
+        .on_conflict_do_nothing(index_elements=["gh_delivery_id"])
+        .returning(Analysis.id)
+    )
+    result = await db.execute(stmt)
+    analysis_id = result.scalar_one_or_none()
+    await db.commit()
+
+    if analysis_id is None:
+        return {"status": "ignored", "reason": "Duplicate delivery"}
     # print(f"Delivery: {gh_delivery_id} | Repo: {repo_full_name} | PR: {pr_number}")
 
     # Github needs a request within 10 seconds, so we will process the diff in the background and return immediately
     background_tasks.add_task(
         run_analysis,
+        analysis_id,
         repo_full_name,
         pr_number,
-        gh_delivery_id,
+        # gh_delivery_id,
     )
 
     return {
