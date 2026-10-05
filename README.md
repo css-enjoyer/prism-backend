@@ -1,4 +1,6 @@
 # Prism
+> ⚠️ **Not intended for production use** - This is purely a learning project built to explore  webhook integration, external API consumption,
+background task processing, database persistence, authentication, containerization, Github Actions CI/CD, E2E testing, async Python, and LLM inference APIs.
 
 **Automated code review powered by LLMs, delivered as a GitHub PR comment.**
 
@@ -125,31 +127,7 @@ To receive webhooks locally, use [ngrok](https://ngrok.com/) or [smee.io](https:
 
 - **No task queue** — Background tasks run in-process. If the server restarts mid-analysis, the task is lost. A production system would use ARQ or Celery with a Redis broker.
 - **No rate limiting** — A high volume of webhook deliveries would each trigger an LLM call. `slowapi` or a reverse proxy rule would address this.
-- **No Alembic** — Schema was created directly in Supabase's SQL editor. Schema changes require manual SQL.
 - **Single-tenant** — One GitHub account, one API key. No multi-user or multi-repo registration.
-
----
-
-## Project Structure
-
-```
-prism-backend/
-├── app/
-│   ├── main.py          # FastAPI app, route definitions
-│   ├── config.py        # Pydantic BaseSettings
-│   ├── models.py        # SQLAlchemy ORM models
-│   ├── schemas.py       # Pydantic request/response schemas
-│   ├── dependencies.py  # FastAPI dependencies (auth, db session)
-│   ├── services/
-│   │   ├── analysis.py  # Core run_analysis logic
-│   │   ├── github.py    # GitHub API client
-│   │   └── llm.py       # OpenRouter client
-│   └── database.py      # Async engine and session setup
-├── tests/
-├── Dockerfile
-├── .github/workflows/ci.yml
-└── requirements.txt
-```
 
 ---
 
