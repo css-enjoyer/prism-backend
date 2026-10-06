@@ -8,6 +8,9 @@ from datetime import datetime
 
 # * A fixture is a function that sets up some state or provides a resource for tests. In this case, the `client` fixture sets up a TestClient instance that tests can use to make requests to the FastAPI app. It also overrides the `get_db` dependency to prevent tests from hitting the real database. After the tests run, it clears the dependency overrides to clean up.
 
+# uv run pytest
+# uv run ruff check .
+
 
 # --------------------------------- Empty db --------------------------------- #
 @pytest.fixture
@@ -24,7 +27,8 @@ async def create_mock_db_empty():
     mock_db = AsyncMock()
 
     fake_db_result = MagicMock()
-    fake_db_result.scalars.return_value.all.return_value = 1
+    fake_db_result.scalars.return_value.all.return_value = []
+    fake_db_result.scalar_one_or_none.return_value = 1
 
     mock_db.execute.return_value = fake_db_result
     yield mock_db

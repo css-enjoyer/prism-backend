@@ -9,6 +9,9 @@ from unittest.mock import AsyncMock
 
 WEBHOOK_SECRET = settings.webhook_secret.encode()
 
+# uv run pytest
+# uv run ruff check .
+
 
 def make_signature(body_bytes: bytes) -> str:
     """Compute the HMAC-SHA256 signature for a given body, the same way GitHub does."""
@@ -131,5 +134,5 @@ def test_duplicate_delivery(client_duplicate_delivery, monkeypatch):
         "/webhook", headers=headers, content=body_bytes
     )
     # Assert: 200 OK with received status
-    assert response.json() == {"status": "ignored", "reason": "Duplicated delivery"}
+    assert response.json() == {"status": "ignored", "reason": "Duplicate delivery"}
     run_mock.assert_not_awaited()
