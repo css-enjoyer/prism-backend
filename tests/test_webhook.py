@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock
 
 WEBHOOK_SECRET = settings.webhook_secret.encode()
 
-# uv run pytest
 # uv run ruff check .
+# uv run pytest
 
 
 def make_signature(body_bytes: bytes) -> str:
@@ -136,3 +136,21 @@ def test_duplicate_delivery(client_duplicate_delivery, monkeypatch):
     # Assert: 200 OK with received status
     assert response.json() == {"status": "ignored", "reason": "Duplicate delivery"}
     run_mock.assert_not_awaited()
+
+
+# 8. Missing delivery id - 400 error
+def test_missing_delivery_id(client_empty_db):
+    # Arrange: build a full PR body matching what GitHub sends
+    body = {
+        "action": "opened",
+        "repository": {"full_name": "test-org/test-repo"},
+        "pull_request": {"number": 1},
+    }
+    body_bytes = json.dumps(body).encode()
+    headers = {
+        "X-Hub-Signature-256": make_signature(body_bytes),
+        "X-GitHub-Event": "pull_request",
+        # no X-GitHub-Delivery
+    }
+    response = client_empty_db.post("/webhook", headers=headers, content=body_bytes)
+    assert response.status_code == 400

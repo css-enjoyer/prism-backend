@@ -77,7 +77,6 @@ async def handle_webhook(
 
     if analysis_id is None:
         return {"status": "ignored", "reason": "Duplicate delivery"}
-    # print(f"Delivery: {gh_delivery_id} | Repo: {repo_full_name} | PR: {pr_number}")
 
     # Github needs a request within 10 seconds, so we will process the diff in the background and return immediately
     background_tasks.add_task(
