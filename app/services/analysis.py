@@ -39,44 +39,22 @@ EMPTY_FEEDBACK = {
     "style": [],
 }
 
-client = AsyncOpenAI(
+llm_client = AsyncOpenAI(
     api_key=settings.openrouter_api_key,
     base_url=settings.openrouter_base_url,
 )
 
 
 async def run_analysis(analysis_id: int, repo_full_name: str, pr_number: int):
-    api_url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}"
-
-    # 1. Fetch diff from github using httpx, analyze with LLM
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                api_url,
-                headers={
-                    "Authorization": f"Bearer {settings.gh_token}",
-                    "Accept": "application/vnd.github.v3.diff",
-                },
-            )
-            response.raise_for_status()
-            diff = response.text
+        # 1. Fetch diff from github using httpx
+        diff = await fetch_diff(repo_full_name, pr_number)
+
         # 2. Analyze diff with LLM, normalize resulting feedback
         feedback = normalize_feedback(await review_diff(diff))
-    except Exception as e:
-        await _mark_error(analysis_id, str(e))
-        return
 
-    # 3. Save results to existing row
-    try:
-        # AsyncSessionLocal is the session factory. Outside of FastAPI's dependency injection cycle (e.g. in background tasks), we use it directly as an async context manager to manually manage the session lifecycle.
-        async with AsyncSessionLocal() as session:
-            await session.execute(
-                update(Analysis)
-                .where(Analysis.id == analysis_id)
-                .values(feedback=feedback, status=AnalysisStatus.completed)
-            )
-            await session.commit()
-
+        # 3. Save results to existing row
+        await _save_feedback(analysis_id, feedback)
     except Exception as e:
         await _mark_error(analysis_id, str(e))
         return
@@ -88,8 +66,22 @@ async def run_analysis(analysis_id: int, repo_full_name: str, pr_number: int):
         await _record_comment_error(analysis_id, f"comment_error: {e}")
 
 
+async def fetch_diff(repo_full_name: str, pr_number: int) -> str:
+    api_url = f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}"
+    async with httpx.AsyncClient() as github_client:
+        response = await github_client.get(
+            api_url,
+            headers={
+                "Authorization": f"Bearer {settings.gh_token}",
+                "Accept": "application/vnd.github.v3.diff",
+            },
+        )
+        response.raise_for_status()
+        return response.text
+
+
 async def review_diff(diff: str) -> dict:
-    response = await client.chat.completions.create(
+    response = await llm_client.chat.completions.create(
         model=settings.openrouter_model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -104,6 +96,17 @@ async def review_diff(diff: str) -> dict:
     except json.JSONDecodeError as e:
         print(f"Failed to parse model response: {e}\nRaw output: {result}")
         raise
+
+
+async def _save_feedback(analysis_id: int, feedback: dict) -> None:
+    # AsyncSessionLocal is the session factory. Outside of FastAPI's dependency injection cycle (e.g. in background tasks), we use it directly as an async context manager to manually manage the session lifecycle.
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            update(Analysis)
+            .where(Analysis.id == analysis_id)
+            .values(feedback=feedback, status=AnalysisStatus.completed)
+        )
+        await session.commit()
 
 
 async def post_pr_comment(repo_full_name: str, pr_number: int, feedback: dict):
@@ -153,8 +156,8 @@ async def post_pr_comment(repo_full_name: str, pr_number: int, feedback: dict):
 
     comment_body = "\n".join(lines)
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
+    async with httpx.AsyncClient() as github_client:
+        response = await github_client.post(
             pr_comment_url,
             headers={"Authorization": f"Bearer {settings.gh_token}"},
             json={"body": comment_body},
