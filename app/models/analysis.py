@@ -3,7 +3,7 @@ from typing import Any
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
-from sqlalchemy import Enum, func
+from sqlalchemy import DateTime, Enum, func
 
 from .base import Base
 
@@ -11,6 +11,7 @@ from .base import Base
 class AnalysisStatus(str, enum.Enum):
     completed = "completed"
     pending = "pending"
+    processing = "processing"
     error = "error"
 
 
@@ -27,3 +28,7 @@ class Analysis(Base):
         Enum(AnalysisStatus), default=AnalysisStatus.pending
     )
     error: Mapped[str | None] = mapped_column(nullable=True, default=None)
+    attempts: Mapped[int] = mapped_column(server_default="0")
+    comment_posted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
