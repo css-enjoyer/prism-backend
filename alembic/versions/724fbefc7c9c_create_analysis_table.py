@@ -32,12 +32,6 @@ def upgrade() -> None:
         sa.Column(
             "created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False
         ),
-        sa.Column(
-            "status",
-            sa.Enum("completed", "pending", "error", name="analysisstatus"),
-            nullable=False,
-        ),
-        sa.Column("error", sa.String(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("gh_delivery_id"),
     )
