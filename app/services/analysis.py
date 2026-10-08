@@ -1,9 +1,10 @@
 import httpx
 from openai import AsyncOpenAI
 from app.config import settings
+from sqlalchemy import update
 import json
 import re
-from sqlalchemy import update
+import copy
 
 from app.db.session import AsyncSessionLocal
 from app.models.analysis import AnalysisStatus
@@ -192,9 +193,9 @@ async def _record_comment_error(analysis_id: int, message: str):
 def normalize_feedback(feedback: dict | None) -> dict:
     # Ensure all expected keys are present and that feedback is in the correct format. This can help mitigate issues with model output inconsistencies.
     if not isinstance(feedback, dict):
-        return EMPTY_FEEDBACK.copy()
+        return copy.deepcopy(EMPTY_FEEDBACK)
 
-    normalized = EMPTY_FEEDBACK.copy()
+    normalized = copy.deepcopy(EMPTY_FEEDBACK)
     for key in normalized:
         value = feedback.get(key, [])
         normalized[key] = value if isinstance(value, list) else []

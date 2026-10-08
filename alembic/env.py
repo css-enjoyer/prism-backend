@@ -32,7 +32,10 @@ target_metadata = None
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
 
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# The app uses an async driver (postgresql+asyncpg://). Alembic runs synchronously,
+# so give it the plain URL; psycopg2 (already installed) handles it.
+sync_url = settings.database_url.replace("+asyncpg", "")
+config.set_main_option("sqlalchemy.url", sync_url)
 target_metadata = Base.metadata
 
 
